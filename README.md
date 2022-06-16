@@ -7,6 +7,7 @@
 
 ```bash
 pip install -r requirements.txt
+pip install git+https://github.com/SKT-AI/KoBART#egg=kobart
 
 # 요약문 생성
 [use gpu]
