@@ -80,7 +80,8 @@ class Base(pl.LightningModule):
     def setup_steps(self, stage=None):
         # NOTE There is a problem that len(train_loader) does not work.
         # After updating to 1.5.2, NotImplementedError: `train_dataloader` · Discussion #10652 · PyTorchLightning/pytorch-lightning https://github.com/PyTorchLightning/pytorch-lightning/discussions/10652
-        train_loader = self.trainer._data_connector._train_dataloader_source.dataloader()
+        train_loader = self.trainer.data_connector.__call__()
+
         return len(train_loader)
 
     def configure_optimizers(self):
