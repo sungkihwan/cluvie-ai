@@ -13,7 +13,7 @@ cd finetune
 
 # 요약문 생성
 [use gpu]
-$ python run_summary_train.py  --gradient_clip_val 1.0  \
+$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --gpus 1 \
@@ -21,7 +21,7 @@ $ python run_summary_train.py  --gradient_clip_val 1.0  \
                  --num_workers 4
 
 [use gpu]
-$ python run_summary_train.py  --gradient_clip_val 1.0  \
+$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --strategy ddp \
@@ -30,7 +30,7 @@ $ python run_summary_train.py  --gradient_clip_val 1.0  \
                  --num_workers 4
 
 [use cpu]
-$ python run_summary_train.py  --gradient_clip_val 1.0  \
+$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --strategy ddp \
