@@ -10,7 +10,7 @@ pip install -r requirements.txt
 
 # 요약문 생성
 [use gpu]
-$ python run_summary_train.py  --gradient_clip_val 1.0  \
+$ python ./finetune/run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --gpus 1 \
@@ -18,7 +18,7 @@ $ python run_summary_train.py  --gradient_clip_val 1.0  \
                  --num_workers 4
 
 [use gpu]
-$ python run_summary_train.py  --gradient_clip_val 1.0  \
+$ python ./finetune/run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --strategy ddp \
@@ -27,7 +27,7 @@ $ python run_summary_train.py  --gradient_clip_val 1.0  \
                  --num_workers 4
 
 [use cpu]
-$ python run_summary_train.py  --gradient_clip_val 1.0  \
+$ python ./finetune/run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --strategy ddp \
@@ -35,10 +35,10 @@ $ python run_summary_train.py  --gradient_clip_val 1.0  \
                  --num_workers 4
 
 # 혐오글 탐지
-$ python3 run_seq_cls.py --task hate-speech --config_file koelectra-base-v3.json
+$ python3 ./finetune/run_seq_cls.py --task hate-speech --config_file koelectra-base-v3.json
 
 # 개체명 인식
-$ python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
+$ python3 ./finetune/run_ner.py --task naver-ner --config_file koelectra-base-v3.json
 ```
 
 ## Reference
