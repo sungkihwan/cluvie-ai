@@ -1,4 +1,5 @@
-torch==1.10.0
+kobart @ git+https://github.com/SKT-AI/KoBART@30c5eb7b593828d6ec2d767eeedb2f2ed02c5c2a
+torch==1.11.0
 transformers==4.8.2
 pytorch_lightning==1.5.2
 sentence-transformers==2.2.0
@@ -10,4 +11,3 @@ seqeval==1.2.2
 scipy==1.8.0
 Flask==2.1.1
 protobuf==3.19.0
-kobart @ git+https://github.com/SKT-AI/KoBART@30c5eb7b593828d6ec2d767eeedb2f2ed02c5c2a
