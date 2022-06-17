@@ -16,8 +16,7 @@ unzip train.zip
 
 # 요약문 생성 
 --args를 입력하지 않으면 디폴트 값으로 실행됩니다.
-$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
-                 --max_epochs 20 \
+$ python3 run_summary_train.py  --gradient_clip_val 1.0 --max_epochs 20
 
 $ python3 run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
