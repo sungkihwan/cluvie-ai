@@ -37,9 +37,6 @@ ckpt/kobart-base-v2/pytorch_bin
 $ python3 get_model_binary.py --hparams hparam_path --model_binary model_binary_path
 $ python3 get_model_binary.py --hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml --model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
 
-# args를 입력하지 않으면 디폴트로 실행
-python3 get_model_binary.py
-
 # 혐오글 탐지
 ckpt/koelectra-base-v3-hate-speech-ckpt/checkpoint-2500/pytorch_model.bin
 

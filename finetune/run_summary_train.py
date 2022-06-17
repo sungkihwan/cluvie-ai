@@ -3,10 +3,11 @@ import logging
 import os
 import pytorch_lightning as pl
 import torch
+import yaml
+
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import EarlyStopping
 from dataset import KobartSummaryModule
-from get_model_binary import MakeBin
 from transformers import BartForConditionalGeneration, PreTrainedTokenizerFast
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 
@@ -80,6 +81,7 @@ class Base(pl.LightningModule):
                             type=int,
                             default=1,
                             help='gpu number')
+
         return parser
     
     def setup_steps(self, stage=None):
@@ -157,6 +159,24 @@ class KoBARTConditionalGeneration(Base):
             losses.append(loss)
         self.log('val_loss', torch.stack(losses).mean(), prog_bar=True)
 
+class MakeBin():
+    def __init__(self, hparams_path=None, model_binary_path=None) -> None:
+        super(MakeBin, self).__init__()
+        self.hparams_path = hparams_path
+        self.model_binary_path = model_binary_path
+
+    def save(self):
+        if self.hparams_path == None:
+            self.hparams_path = args.hparams
+        if self.model_binary_path == None:
+            self.model_binary_path = args.model_binary
+
+        with open(self.hparams_path) as file:
+            hparams = yaml.safe_load(file)
+
+        inf = KoBARTConditionalGeneration.load_from_checkpoint(self.model_binary_path, hparams=hparams)
+        inf.model.save_pretrained(args.output_dir)
+
 if __name__ == '__main__':
     parser = Base.add_model_specific_args(parser)
     parser = pl.Trainer.add_argparse_args(parser)
@@ -195,4 +215,4 @@ if __name__ == '__main__':
 
     model = KoBARTConditionalGeneration(args, trainer)
     trainer.fit(model, dm)
-    MakeBin.save(checkpoint_callback.best_model_path)
+    MakeBin.save('ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml', checkpoint_callback.best_model_path)

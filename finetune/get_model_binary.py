@@ -1,5 +1,5 @@
 import argparse
-from finetune.run_summary_train import KoBARTConditionalGeneration
+from run_summary_train import KoBARTConditionalGeneration
 import yaml
 
 parser = argparse.ArgumentParser()
