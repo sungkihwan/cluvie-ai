@@ -165,6 +165,7 @@ class MakeBin():
         self.hparams_path = hparams_path
         self.model_binary_path = model_binary_path
 
+    @staticmethod
     def save(self):
         if self.hparams_path == None:
             self.hparams_path = args.hparams
