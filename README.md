@@ -11,16 +11,15 @@ cd finetune
 
 # summary 데이터 크기가 커서 압축 풀기
 sudo apt-get install zip unzip
+cd data/summary 
 unzip test.zip
 unzip train.zip
 
 # 요약문 생성 
 --args를 입력하지 않으면 디폴트 값으로 실행됩니다.
-$ python3 run_summary_train.py  --gradient_clip_val 1.0 --max_epochs 20 --default_root_dir ckpt/kobart-base-v2
-
 $ python3 run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
-                 --default_root_dir logs \
+                 --default_root_dir ckpt/kobart-base-v2 \
                  --gpus 1 \
                  --batch_size 4 \
                  --num_workers 4
