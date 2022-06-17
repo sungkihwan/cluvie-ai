@@ -4,6 +4,7 @@ import os
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning.callbacks import EarlyStopping
 from dataset import KobartSummaryModule
 from transformers import BartForConditionalGeneration, PreTrainedTokenizerFast
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
@@ -178,10 +179,18 @@ if __name__ == '__main__':
                                                        mode='min',
                                                        save_top_k=3)
 
+    early_stop_callback = EarlyStopping(
+        monitor='val_loss',
+        patience=3,
+        strict=False,
+        verbose=False,
+        mode='min'
+    )
+
     tb_logger = pl_loggers.TensorBoardLogger(os.path.join(args.default_root_dir, 'tb_logs'))
-    lr_logger = pl.callbacks.LearningRateMonitor()
+    lr_logger_callback = pl.callbacks.LearningRateMonitor()
     trainer = pl.Trainer.from_argparse_args(args, logger=tb_logger,
-                                            callbacks=[checkpoint_callback, lr_logger])
+                                            callbacks=[checkpoint_callback, lr_logger_callback, early_stop_callback])
 
     model = KoBARTConditionalGeneration(args, trainer)
     trainer.fit(model, dm)
