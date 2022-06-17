@@ -9,6 +9,11 @@
 pip install -r requirements.txt
 cd finetune
 
+# summary 데이터 크기가 커서 압축 풀기
+sudo apt-get install zip unzip
+unzip test.zip
+unzip train.zip
+
 # 요약문 생성 
 --args를 입력하지 않으면 디폴트 값으로 실행됩니다.
 $ python3 run_summary_train.py  --gradient_clip_val 1.0  \
@@ -49,6 +54,7 @@ ckpt/koelectra-base-v3-naver-ner-ckpt/checkpoint-9000/pytorch_model.bin
 - Forked From https://github.com/monologg/KoELECTRA, https://github.com/seujung/KoBART-summarization
 - [Transformers Examples](https://github.com/huggingface/transformers/blob/master/examples/README.md)
 - [KoBART](https://github.com/SKT-AI/KoBART)
+- [도서자료 요약 Dataset](https://aihub.or.kr/aidata/30713)
 - [Naver NER Dataset](https://github.com/naver/nlp-challenge)
 - [Korean Hate Speech](https://github.com/kocohub/korean-hate-speech)
 - [Key Bert](https://github.com/ukairia777/tensorflow-nlp-tutorial/tree/main/19.%20Topic%20Modeling%20(LDA%2C%20BERT-Based))
