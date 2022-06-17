@@ -36,9 +36,9 @@ $ python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
 ## How to Make bin
 ```
 # 요약문 생성
-ckpt/kobart-base-v2/pytorch_bin
+ckpt/kobart-base-v2/pytorch_model.bin
 
-# 아래 명령어로 실행가능
+# 아래 명령어로 특정 체크 포인트를 바이너리 파일로 만들 수 있습니다. 
 $ python3 get_model_binary.py --hparams hparam_path --model_binary model_binary_path
 $ python3 get_model_binary.py --hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml --model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
 

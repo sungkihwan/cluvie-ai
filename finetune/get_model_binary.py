@@ -5,7 +5,7 @@ import yaml
 parser = argparse.ArgumentParser()
 parser.add_argument("--hparams", default='ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml', type=str)
 parser.add_argument("--model_binary", default=None, type=str)
-parser.add_argument("--output_dir", default='ckpt/kobart-base-v2/pytorch_bin', type=str)
+parser.add_argument("--output_dir", default='ckpt/kobart-base-v2', type=str)
 args = parser.parse_args()
 
 class MakeBin():
