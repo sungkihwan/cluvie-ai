@@ -6,44 +6,14 @@ import torch
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import EarlyStopping
 from dataset import KobartSummaryModule
+from get_model_binary import MakeBin
 from transformers import BartForConditionalGeneration, PreTrainedTokenizerFast
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 
 parser = argparse.ArgumentParser(description='KoBART Summarization')
-parser.add_argument('--model_name',
-                    default="gogamza/kobart-base-v2",
-                    type=str)
-parser.add_argument('--checkpoint_path',
-                    type=str,
-                    help='checkpoint path')
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-class ArgsBase():
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = argparse.ArgumentParser(
-            parents=[parent_parser], add_help=False)
-        parser.add_argument('--train_file',
-                            type=str,
-                            default='data/summary/train.tsv',
-                            help='train file')
-
-        parser.add_argument('--test_file',
-                            type=str,
-                            default='data/summary/test.tsv',
-                            help='test file')
-
-        parser.add_argument('--batch_size',
-                            type=int,
-                            default=14,
-                            help='')
-        parser.add_argument('--max_len',
-                            type=int,
-                            default=512,
-                            help='max seq len')
-        return parser
 
 class Base(pl.LightningModule):
     def __init__(self, hparams, trainer, **kwargs) -> None:
@@ -57,9 +27,24 @@ class Base(pl.LightningModule):
         parser = argparse.ArgumentParser(
             parents=[parent_parser], add_help=False)
 
+        parser.add_argument('--train_file',
+                            type=str,
+                            default='data/summary/train.tsv',
+                            help='train file')
+
+        parser.add_argument('--test_file',
+                            type=str,
+                            default='data/summary/test.tsv',
+                            help='test file')
+
+        parser.add_argument('--max_len',
+                            type=int,
+                            default=512,
+                            help='max seq len')
+
         parser.add_argument('--batch-size',
                             type=int,
-                            default=14,
+                            default=16,
                             help='batch size for training (default: 96)')
 
         parser.add_argument('--lr',
@@ -76,11 +61,29 @@ class Base(pl.LightningModule):
                             type=str,
                             default=None,
                             help='kobart model path')
+
+        parser.add_argument('--checkpoint_path',
+                            type=str,
+                            help='checkpoint path')
+
+        parser.add_argument('--num_workers',
+                            type=int,
+                            default=4,
+                            help='num of worker for dataloader')
+
+        parser.add_argument('--default_root_dir',
+                            type=str,
+                            default='ckpt/kobart-base-v2',
+                            help='defalut save root dir')
+
+        parser.add_argument('--gpus',
+                            type=int,
+                            default=1,
+                            help='gpu number')
         return parser
     
     def setup_steps(self, stage=None):
-        # NOTE There is a problem that len(train_loader) does not work.
-        # After updating to 1.5.2, NotImplementedError: `train_dataloader` · Discussion #10652 · PyTorchLightning/pytorch-lightning https://github.com/PyTorchLightning/pytorch-lightning/discussions/10652
+        # pip install pl>=1.5.2
         train_loader = self.trainer._data_connector._train_dataloader_source.dataloader()
 
         return len(train_loader)
@@ -117,12 +120,12 @@ class Base(pl.LightningModule):
 class KoBARTConditionalGeneration(Base):
     def __init__(self, hparams, trainer=None, **kwargs):
         super(KoBARTConditionalGeneration, self).__init__(hparams, trainer, **kwargs)
-        self.model = BartForConditionalGeneration.from_pretrained(hparams.model_name)
+        self.model = BartForConditionalGeneration.from_pretrained("gogamza/kobart-base-v2")
         self.model.train()
         self.bos_token = '<s>'
         self.eos_token = '</s>'
         
-        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(hparams.model_name)
+        self.tokenizer = PreTrainedTokenizerFast.from_pretrained("gogamza/kobart-base-v2")
         self.pad_token_id = self.tokenizer.pad_token_id
 
     def forward(self, inputs):
@@ -156,11 +159,9 @@ class KoBARTConditionalGeneration(Base):
 
 if __name__ == '__main__':
     parser = Base.add_model_specific_args(parser)
-    parser = ArgsBase.add_model_specific_args(parser)
-    parser = KobartSummaryModule.add_model_specific_args(parser)
     parser = pl.Trainer.add_argparse_args(parser)
     args = parser.parse_args()
-    tokenizer = PreTrainedTokenizerFast.from_pretrained(args.model_name)
+    tokenizer = PreTrainedTokenizerFast.from_pretrained("gogamza/kobart-base-v2")
     logging.info(args)
 
     dm = KobartSummaryModule(
@@ -175,7 +176,7 @@ if __name__ == '__main__':
                                                        dirpath=args.default_root_dir,
                                                        filename='model_chp/{epoch:02d}-{val_loss:.3f}',
                                                        verbose=True,
-                                                       save_last=True,
+                                                       save_last=False,
                                                        mode='min',
                                                        save_top_k=3)
 
@@ -194,3 +195,4 @@ if __name__ == '__main__':
 
     model = KoBARTConditionalGeneration(args, trainer)
     trainer.fit(model, dm)
+    MakeBin.save(checkpoint_callback.best_model_path)
