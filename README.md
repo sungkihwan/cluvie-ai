@@ -7,32 +7,17 @@
 
 ```bash
 pip install -r requirements.txt
-
 cd finetune
 
-# 요약문 생성
-[use gpu]
+# 요약문 생성 
+--args를 입력하지 않으면 디폴트 값으로 실행됩니다.
+$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
+                 --max_epochs 20 \
+
 $ python3 run_summary_train.py  --gradient_clip_val 1.0  \
                  --max_epochs 50 \
                  --default_root_dir logs \
                  --gpus 1 \
-                 --batch_size 4 \
-                 --num_workers 4
-
-[use gpu]
-$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
-                 --max_epochs 50 \
-                 --default_root_dir logs \
-                 --strategy ddp \
-                 --gpus 2 \
-                 --batch_size 4 \
-                 --num_workers 4
-
-[use cpu]
-$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
-                 --max_epochs 50 \
-                 --default_root_dir logs \
-                 --strategy ddp \
                  --batch_size 4 \
                  --num_workers 4
 
@@ -41,6 +26,26 @@ $ python3 run_seq_cls.py --task hate-speech --config_file koelectra-base-v3.json
 
 # 개체명 인식
 $ python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
+```
+
+## How to Make bin
+```
+# 요약문 생성
+ckpt/kobart-base-v2/pytorch_bin
+
+# 아래 명령어로 실행가능
+$ python3 get_model_binary.py —hparams hparam_path —model_binary model_binary_path
+$ python3 get_model_binary.py —hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml —model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
+
+# args를 입력하지 않으면 디폴트로 실행
+python3 get_model_binary.py
+
+# 혐오글 탐지
+ckpt/koelectra-base-v3-hate-speech-ckpt/checkpoint-2500/pytorch_model.bin
+
+# 개체명 인식
+ckpt/koelectra-base-v3-naver-ner-ckpt/checkpoint-9000/pytorch_model.bin
+
 ```
 
 ## Reference
