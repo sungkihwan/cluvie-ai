@@ -20,7 +20,7 @@ class MakeBin():
         if self.model_binary_path == None:
             self.model_binary_path = args.model_binary
 
-        with open(args.hparams) as file:
+        with open(self.hparams_path) as file:
             hparams = yaml.safe_load(file)
 
         inf = KoBARTConditionalGeneration.load_from_checkpoint(self.model_binary_path, hparams=hparams)
