@@ -72,11 +72,6 @@ class Base(pl.LightningModule):
                             default=4,
                             help='num of worker for dataloader')
 
-        parser.add_argument('--gpus',
-                            type=int,
-                            default=1,
-                            help='gpu number')
-
         return parser
     
     def setup_steps(self, stage=None):
