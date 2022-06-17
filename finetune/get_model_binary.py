@@ -9,7 +9,7 @@ parser.add_argument("--output_dir", default='ckpt/kobart-base-v2/pytorch_bin', t
 args = parser.parse_args()
 
 class MakeBin():
-    def __init__(self, hparams_path=None, model_binary_path=None) -> None:
+    def __init__(self, model_binary_path=None, hparams_path=None) -> None:
         super(MakeBin, self).__init__()
         self.hparams_path = hparams_path
         self.model_binary_path = model_binary_path
