@@ -34,8 +34,8 @@ $ python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
 ckpt/kobart-base-v2/pytorch_bin
 
 # 아래 명령어로 실행가능
-$ python3 get_model_binary.py —hparams hparam_path —model_binary model_binary_path
-$ python3 get_model_binary.py —hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml —model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
+$ python3 get_model_binary.py --hparams hparam_path --model_binary model_binary_path
+$ python3 get_model_binary.py --hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml --model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
 
 # args를 입력하지 않으면 디폴트로 실행
 python3 get_model_binary.py
