@@ -13,8 +13,37 @@ from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 
 parser = argparse.ArgumentParser(description='KoBART Summarization')
 
+parser.add_argument('--checkpoint_path',
+                    type=str,
+                    help='checkpoint path')
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+class ArgsBase():
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(
+            parents=[parent_parser], add_help=False)
+        parser.add_argument('--train_file',
+                            type=str,
+                            default='data/train.tsv',
+                            help='train file')
+
+        parser.add_argument('--test_file',
+                            type=str,
+                            default='data/test.tsv',
+                            help='test file')
+
+        parser.add_argument('--batch_size',
+                            type=int,
+                            default=14,
+                            help='')
+        parser.add_argument('--max_len',
+                            type=int,
+                            default=512,
+                            help='max seq len')
+        return parser
 
 class Base(pl.LightningModule):
     def __init__(self, hparams, trainer, **kwargs) -> None:
@@ -28,24 +57,9 @@ class Base(pl.LightningModule):
         parser = argparse.ArgumentParser(
             parents=[parent_parser], add_help=False)
 
-        parser.add_argument('--train_file',
-                            type=str,
-                            default='data/summary/train.tsv',
-                            help='train file')
-
-        parser.add_argument('--test_file',
-                            type=str,
-                            default='data/summary/test.tsv',
-                            help='test file')
-
-        parser.add_argument('--max_len',
-                            type=int,
-                            default=512,
-                            help='max seq len')
-
         parser.add_argument('--batch-size',
                             type=int,
-                            default=16,
+                            default=14,
                             help='batch size for training (default: 96)')
 
         parser.add_argument('--lr',
@@ -62,16 +76,6 @@ class Base(pl.LightningModule):
                             type=str,
                             default=None,
                             help='kobart model path')
-
-        parser.add_argument('--checkpoint_path',
-                            type=str,
-                            help='checkpoint path')
-
-        parser.add_argument('--num_workers',
-                            type=int,
-                            default=4,
-                            help='num of worker for dataloader')
-
         return parser
     
     def setup_steps(self, stage=None):
@@ -165,9 +169,12 @@ class MakeBin():
 
 if __name__ == '__main__':
     parser = Base.add_model_specific_args(parser)
+    parser = ArgsBase.add_model_specific_args(parser)
+    parser = KobartSummaryModule.add_model_specific_args(parser)
     parser = pl.Trainer.add_argparse_args(parser)
-    args = parser.parse_args()
+
     tokenizer = PreTrainedTokenizerFast.from_pretrained("gogamza/kobart-base-v2")
+    args = parser.parse_args()
     logging.info(args)
 
     dm = KobartSummaryModule(
