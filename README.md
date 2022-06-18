@@ -9,26 +9,20 @@
 pip install -r requirements.txt
 cd finetune
 
-# summary 데이터 크기가 커서 압축 풀기
+# summary 데이터 크기문제로 압축을 풀고 진행
 sudo apt-get install zip unzip
 cd data/summary 
 unzip test.zip
 unzip train.zip
 
 # 요약문 생성 
---args를 입력하지 않으면 디폴트 값으로 실행됩니다.
-$ python3 run_summary_train.py  --gradient_clip_val 1.0  \
-                 --max_epochs 50 \
-                 --default_root_dir ckpt/kobart-base-v2 \
-                 --gpus 1 \
-                 --batch_size 4 \
-                 --num_workers 4
+python3 run_summary_train.py --task summary --config_file kobart-base-v2.yml
 
 # 혐오글 탐지
-$ python3 run_seq_cls.py --task hate-speech --config_file koelectra-base-v3.json
+python3 run_seq_cls.py --task hate-speech --config_file koelectra-base-v3.json
 
 # 개체명 인식
-$ python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
+python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
 ```
 
 ## How to Make bin
@@ -37,8 +31,8 @@ $ python3 run_ner.py --task naver-ner --config_file koelectra-base-v3.json
 ckpt/kobart-base-v2/pytorch_model.bin
 
 # 아래 명령어로 특정 체크 포인트를 바이너리 파일로 만들 수 있습니다. 
-$ python3 get_model_binary.py --hparams hparam_path --model_binary model_binary_path
-$ python3 get_model_binary.py --hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml --model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
+python3 get_model_binary.py --hparams hparam_path --model_binary model_binary_path
+python3 get_model_binary.py --hparams ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml --model_binary ckpt/kobart-base-v2/model_chp/epoch=01-val_loss=1.303.ckpt
 
 # 혐오글 탐지
 ckpt/koelectra-base-v3-hate-speech-ckpt/checkpoint-2500/pytorch_model.bin
