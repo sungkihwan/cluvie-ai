@@ -1,4 +1,3 @@
-import argparse
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
@@ -65,16 +64,6 @@ class KobartSummaryModule(pl.LightningDataModule):
         self.test_file_path = test_file
         self.tok = tok
         self.num_workers = num_workers
-
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = argparse.ArgumentParser(
-            parents=[parent_parser], add_help=False)
-        parser.add_argument('--num_workers',
-                            type=int,
-                            default=4,
-                            help='num of worker for dataloader')
-        return parser
 
     # OPTIONAL, called for every GPU/machine (assigning state is OK)
     def setup(self, stage):

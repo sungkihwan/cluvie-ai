@@ -4,79 +4,23 @@ import os
 import pytorch_lightning as pl
 import torch
 import yaml
+import json
 
+from attrdict import AttrDict
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import EarlyStopping
 from dataset import KobartSummaryModule
 from transformers import BartForConditionalGeneration, PreTrainedTokenizerFast
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 
-parser = argparse.ArgumentParser(description='KoBART Summarization')
-
-parser.add_argument('--checkpoint_path',
-                    type=str,
-                    help='checkpoint path')
-
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-class ArgsBase():
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = argparse.ArgumentParser(
-            parents=[parent_parser], add_help=False)
-        parser.add_argument('--train_file',
-                            type=str,
-                            default='data/summary/train.tsv',
-                            help='train file')
-
-        parser.add_argument('--test_file',
-                            type=str,
-                            default='data/summary/test.tsv',
-                            help='test file')
-
-        parser.add_argument('--batch_size',
-                            type=int,
-                            default=14,
-                            help='')
-        parser.add_argument('--max_len',
-                            type=int,
-                            default=512,
-                            help='max seq len')
-        return parser
 
 class Base(pl.LightningModule):
     def __init__(self, hparams, trainer, **kwargs) -> None:
         super(Base, self).__init__()
         self.save_hyperparameters(hparams)
         self.trainer = trainer
-
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        # add model specific args
-        parser = argparse.ArgumentParser(
-            parents=[parent_parser], add_help=False)
-
-        parser.add_argument('--batch-size',
-                            type=int,
-                            default=14,
-                            help='batch size for training (default: 96)')
-
-        parser.add_argument('--lr',
-                            type=float,
-                            default=3e-5,
-                            help='The initial learning rate')
-
-        parser.add_argument('--warmup_ratio',
-                            type=float,
-                            default=0.1,
-                            help='warmup ratio')
-
-        parser.add_argument('--model_path',
-                            type=str,
-                            default=None,
-                            help='kobart model path')
-        return parser
     
     def setup_steps(self, stage=None):
         # pip install pl>=1.5.2
@@ -116,12 +60,12 @@ class Base(pl.LightningModule):
 class KoBARTConditionalGeneration(Base):
     def __init__(self, hparams, trainer=None, **kwargs):
         super(KoBARTConditionalGeneration, self).__init__(hparams, trainer, **kwargs)
-        self.model = BartForConditionalGeneration.from_pretrained("gogamza/kobart-base-v2")
+        self.model = BartForConditionalGeneration.from_pretrained(hparams.model_name_or_path)
         self.model.train()
         self.bos_token = '<s>'
         self.eos_token = '</s>'
         
-        self.tokenizer = PreTrainedTokenizerFast.from_pretrained("gogamza/kobart-base-v2")
+        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(hparams.model_name_or_path)
         self.pad_token_id = self.tokenizer.pad_token_id
 
     def forward(self, inputs):
@@ -168,13 +112,17 @@ class MakeBin():
         inf.model.save_pretrained(args.output_dir)
 
 if __name__ == '__main__':
-    parser = Base.add_model_specific_args(parser)
-    parser = ArgsBase.add_model_specific_args(parser)
-    parser = KobartSummaryModule.add_model_specific_args(parser)
-    parser = pl.Trainer.add_argparse_args(parser)
+    cli_parser = argparse.ArgumentParser()
 
-    tokenizer = PreTrainedTokenizerFast.from_pretrained("gogamza/kobart-base-v2")
-    args = parser.parse_args()
+    cli_parser.add_argument("--task", type=str, default="summary", required=True)
+    cli_parser.add_argument("--config_dir", type=str, default="config")
+    cli_parser.add_argument("--config_file", type=str, default="kobart-base-v2.yml", required=True)
+    cli_args = cli_parser.parse_args()
+
+    with open(os.path.join(cli_args.config_dir, cli_args.task, cli_args.config_file)) as f:
+        args = yaml.safe_load(f)
+
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(args.model_name_or_path)
     logging.info(args)
 
     dm = KobartSummaryModule(
@@ -208,4 +156,4 @@ if __name__ == '__main__':
 
     model = KoBARTConditionalGeneration(args, trainer)
     trainer.fit(model, dm)
-    MakeBin.save('ckpt/kobart-base-v2/tb_logs/default/version_0/hparams.yaml', checkpoint_callback.best_model_path)
+    MakeBin.save(os.path.join(args.default_root_dir, 'tb_logs', 'default/version_0/hparams.yaml'), checkpoint_callback.best_model_path)
