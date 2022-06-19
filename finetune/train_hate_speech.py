@@ -28,6 +28,7 @@ args = {
     'batch_size': 32,
     'labels': 4,
     'linear_layer_size': 515,
+    'dropout_rate': 0.5,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
