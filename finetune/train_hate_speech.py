@@ -95,18 +95,18 @@ class ElectraClassification(LightningModule):
         ##########################################################
         '''
 
-        input_ids = batch["input_ids"]
-        attention_mask = batch["attention_mask"]
-        token_type_ids = batch["token_type_ids"]
-        labels = batch["labels"]
+        # input_ids = batch["input_ids"]
+        # attention_mask = batch["attention_mask"]
+        # token_type_ids = batch["token_type_ids"]
+        # labels = batch["labels"]
 
-        # label = batch['label'].view([-1, 1])
-        #
-        # output = self(input_ids=batch['input_ids'].to(device),
-        #               attention_mask=batch['attention_mask'].to(device),
-        #               labels=label.to(device))
+        labels = batch['label'].view([-1, 1])
 
-        loss, preds = self(input_ids, attention_mask, labels, token_type_ids)
+        loss, preds = self(input_ids=batch['input_ids'].to(device),
+                      attention_mask=batch['attention_mask'].to(device),
+                      labels=labels.to(device))
+
+        # loss, preds = self(input_ids, attention_mask, labels, token_type_ids)
 
         if state == "train":
             step_name = "train_loss"
