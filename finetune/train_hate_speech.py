@@ -31,6 +31,8 @@ args = {
     'label_col': 'hate',
     'linear_layer_size': 515,
     'batch_size': 32,
+    'dropout_rate': 0.5,
+    'num_labels': 3,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
