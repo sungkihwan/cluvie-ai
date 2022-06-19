@@ -4,10 +4,8 @@ import os
 import pytorch_lightning as pl
 import torch
 import yaml
-import json
 
-from attrdict import AttrDict
-from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning import loggers as pl_loggers, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping
 from dataset import KobartSummaryModule
 from transformers import BartForConditionalGeneration, PreTrainedTokenizerFast
@@ -112,6 +110,7 @@ class MakeBin():
         inf.model.save_pretrained(args.output_dir)
 
 if __name__ == '__main__':
+    seed_everything(42)
     cli_parser = argparse.ArgumentParser()
 
     cli_parser.add_argument("--task", type=str, default="summary", required=True)
