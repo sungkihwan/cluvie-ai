@@ -70,7 +70,7 @@ class ElectraClassification(LightningModule):
         # output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         # cls = output[0][:, 0]
 
-        outputs = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        outputs = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
 
         # print(output)
 
@@ -102,7 +102,7 @@ class ElectraClassification(LightningModule):
 
         # change label shape (list -> torch.Tensor((batch_size, 1)))
 
-        outputs = self(input_ids, attention_mask, labels)
+        outputs = self(input_ids, attention_mask, labels, token_type_ids)
         loss = outputs.loss
 
         if state == "train":
