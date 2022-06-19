@@ -4,7 +4,14 @@ import numpy as np
 from konlpy.tag import Okt
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from transformers import ElectraForSequenceClassification, ElectraTokenizer
 from sentence_transformers import SentenceTransformer
+
+import torch.nn as nn
+
+import re
+import emoji
+from soynlp.normalizer import repeat_normalize
 
 app = Flask(__name__)
 sroberta_model = SentenceTransformer('jhgan/ko-sroberta-multitask')
@@ -80,6 +87,30 @@ def predict_keyword_diversity():
     candidate_embeddings = sroberta_model.encode(candidates)
 
     return jsonify(mmr(embeddings, candidate_embeddings, candidates, top_n=5, diversity=0.7))
+
+def clean_text(text):
+    emojis = ''.join(emoji.UNICODE_EMOJI.keys())
+    pattern = re.compile(f'[^ .,?!/@$%~％·∼()\x00-\x7Fㄱ-힣{emojis}]+')
+    url_pattern = re.compile(
+        r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)'
+    )
+    processed = pattern.sub(' ', text)
+    processed = url_pattern.sub(' ', processed)
+    processed = processed.strip()
+    processed = repeat_normalize(processed, num_repeats=2)
+    return processed
+
+model = ElectraForSequenceClassification.load_from_checkpoint("")
+tokenizer = ElectraTokenizer.from_pretrained("monologg/koelectra-small-v3-discriminator")
+@app.route('/classify/hate/speech', methods=['POST'])
+def classify_hate_speech():
+    sentences = request.get_json()['sentences']
+    processed = clean_text(sentences)
+
+    tokenized = tokenizer(processed, return_tensors='pt')
+
+    output = model(tokenized.input_ids, tokenized.attention_mask)
+    return jsonify(nn.functional.softmax(output.logits, dim=-1))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True)
