@@ -3,7 +3,6 @@ import pandas as pd
 
 from pprint import pprint
 
-import torchmetrics
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, TensorDataset
@@ -12,7 +11,7 @@ from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer, seed_everything, loggers as pl_loggers
 
-from transformers import ElectraModel, ElectraForSequenceClassification, ElectraTokenizer, AdamW
+from transformers import ElectraModel, ElectraTokenizer, AdamW
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
@@ -20,19 +19,15 @@ import re
 import emoji
 from soynlp.normalizer import repeat_normalize
 
-device = torch.device("cuda")
-
 args = {
     'random_seed': 42,  # Random Seed
     'output_dir': 'ckpt',
-    'model_name_or_path': "monologg/koelectra-base-v3-discriminator",  # "beomi/KcELECTRA-base"
+    'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
     'task_name': '',
     'doc_col': 'comment',
     'label_col': 'hate',
-    'linear_layer_size': 515,
     'batch_size': 32,
-    'dropout_rate': 0.5,
-    'num_labels': 3,
+    'labels': 4,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
@@ -47,45 +42,29 @@ args = {
     'num_workers': 4,  # Multi thread
 }
 
-class ElectraClassification(LightningModule):
+class HateSpeechClassification(LightningModule):
     def __init__(self, **kwargs):
         super().__init__()
         self.save_hyperparameters()  # self.hparams 저장
 
-        # self.electra_sequence_classification = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
+        self.electra = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
 
-        self.electra = ElectraModel.from_pretrained(self.hparams.model_name_or_path, return_dict=False)
-        # self.electra_model = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
-        # self.criterion = nn.BCELoss()
         self.classifier = nn.Sequential(
-            nn.Linear(self.electra_model.config.hidden_size, self.hparams.linear_layer_size),
-            nn.ReLU(),
+            nn.Linear(self.hparams.hidden_layer_size, self.hparams.linear_layer_size),
+            nn.GELU(),
             nn.Dropout(self.hparams.dropout_rate),
-            nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
+            nn.Linear(self.hparams.linear_layer_size, self.hparams.labels),
         )
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None, token_type_ids=None):
-        # output = self.electra_model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        # logit = self.classifier(output.last_hidden_state[:, 0])
-
-        output = self.electra(input_ids=input_ids, attention_mask=attention_mask)
-        output = self.classifier(output.last_hidden_state[:, 0])
-        preds = torch.sigmoid(output)
+    def forward(self, input_ids=None, attention_mask=None, labels=None):
+        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        output = self.classifier(output.last_hidden_state[:, 0]) # if bert self.classifier(output.pooler_output)
+        output = torch.sigmoid(output)
         loss = 0
         if labels is not None:
-            loss = self.criterion(preds, labels)
-
-        # output = self.electra_sequence_classification(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-        # logits = output.logits
-        # loss = output.loss
-        # softmax = nn.functional.softmax(logits, dim=1)
-        # preds = softmax.argmax(dim=1)
-
-        # return loss, preds
-
-        return loss, preds
-
+            loss = self.criterion(output, labels)
+        return loss, output
 
     def step(self, batch, batch_idx, state):
         '''
@@ -99,11 +78,9 @@ class ElectraClassification(LightningModule):
 
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        token_type_ids = batch["token_type_ids"]
         labels = batch["labels"]
 
-
-        loss, preds = self(input_ids, attention_mask, labels, token_type_ids)
+        loss, output = self(input_ids, attention_mask, labels)
 
         if state == "train":
             step_name = "train_loss"
@@ -114,7 +91,7 @@ class ElectraClassification(LightningModule):
 
         self.log(step_name, loss, prog_bar=True, logger=True)
 
-        return {"loss": loss, "predictions": preds, "labels": labels}
+        return {"loss": loss, "predictions": output, "labels": labels}
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "train")
@@ -134,8 +111,8 @@ class ElectraClassification(LightningModule):
         y_true = []
         y_pred = []
         for i in outputs:
-            y_true += i['labels']
-            y_pred += i['predictions']
+            y_true += i['y_true']
+            y_pred += i['y_pred']
 
         self.log(state + '_loss', float(loss), on_epoch=True, prog_bar=True)
         self.log(state + '_acc', accuracy_score(y_true, y_pred), on_epoch=True, prog_bar=True)
@@ -170,44 +147,43 @@ class ElectraClassification(LightningModule):
             # }
         }
 
-class ElectraClassificationDataset(Dataset):
-    def __init__(self, path, doc_col, label_col, max_length,
-                 model_name_or_path, num_workers=1, labels_dict=None):
+class HateSpeechDataset(Dataset):
+    def __init__(
+            self,
+            data_path,
+            model_name_or_path,
+            max_length: int = 128,
+            doc_col = "comment"
+    ):
         self.tokenizer = ElectraTokenizer.from_pretrained(model_name_or_path)
-
         self.max_length = max_length
         self.doc_col = doc_col
-        self.label_col = label_col
 
-        # labels
-        # None : label이 num으로 되어 있음
-        # dict : label이 num이 아닌 것으로 되어 있음
-        # ex : {True : 1, False : 0}
-        self.labels_dict = labels_dict
+        # 파일 읽기
+        df = self.read_data(data_path)
 
-        # dataset
-        df = self.read_data(path)
-        df[label_col] = df[label_col].map(self.string_to_number)
+        # hate speech date 전처리
+        df = self.hate_speech_preprocessor(df)
+
+        self.label_columns = df.columns.tolist()[2:]
+        self.data = df
+
+    def hate_speech_preprocessor(self, df):
+
+        df['offensive'] = df['hate'].map(lambda x: 1 if x == "offensive" else 0)
+        df['hate'] = df['hate'].map(lambda x: 1 if x == "hate" else 0)
+        df['others'] = df['bias'].map(lambda x: 1 if x == "others" else 0)
+        df['gender'] = df['bias'].map(lambda x: 1 if x == "gender" else 0)
+        df.drop(['bias'], axis=1, inplace=True)
+
         # nan 제거
         df = df.dropna(axis=0)
         # 중복제거
         df.drop_duplicates(subset=[self.doc_col], inplace=True)
-        self.dataset = df
 
-    def read_data(self, path):
-        if path.endswith('xlsx'):
-            return pd.read_excel(path)
-        elif path.endswith('csv'):
-            return pd.read_csv(path)
-        elif path.endswith('tsv') or path.endswith('txt'):
-            return pd.read_csv(path, sep='\t')
-        else:
-            raise NotImplementedError('Only Excel(xlsx)/Csv/Tsv(txt) are Supported')
+        return df
 
-    def __len__(self):
-        return len(self.dataset)
-
-    # text 데이터 전처리
+    # 한국어 데이터 전처리
     def clean_text(self, text):
         emojis = ''.join(emoji.UNICODE_EMOJI.keys())
         pattern = re.compile(f'[^ .,?!/@$%~％·∼()\x00-\x7Fㄱ-힣{emojis}]+')
@@ -221,85 +197,85 @@ class ElectraClassificationDataset(Dataset):
 
         return processed
 
-    # hate speech 데이터 전처리
-    def string_to_number(self, label):
-        if label == 'hate':
-            return 0
-        elif label == 'offensive':
-            return 1
+    # 파일 읽기
+    def read_data(self, path):
+        if path.endswith('xlsx'):
+            return pd.read_excel(path)
+        elif path.endswith('csv'):
+            return pd.read_csv(path)
+        elif path.endswith('tsv') or path.endswith('txt'):
+            return pd.read_csv(path, sep='\t')
         else:
-            return 2
+            raise NotImplementedError('Only Excel(xlsx)/Csv/Tsv(txt) are Supported')
 
-    def __getitem__(self, idx):
-        document = self.clean_text(self.dataset[self.doc_col].iloc[idx])
-        inputs = self.tokenizer(
-            document,
-            return_tensors='pt',
-            truncation=True,
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index: int):
+        data_row = self.data.iloc[index]
+
+        comment_text = data_row.comment_text
+        labels = data_row[self.label_columns]
+
+        encoding = self.tokenizer.encode_plus(
+            comment_text,
+            add_special_tokens=True,
             max_length=self.max_length,
-            padding='max_length',
-            add_special_tokens=True
+            return_token_type_ids=False,
+            padding="max_length",
+            truncation=True,
+            return_attention_mask=True,
+            return_tensors='pt',
         )
 
-        if self.labels_dict:
-            labels = self.labels_dict[self.dataset[self.label_col].iloc[idx]]
-        else:
-            labels = self.dataset[self.label_col].iloc[idx]
+        return dict(
+            comment_text=comment_text,
+            input_ids=encoding["input_ids"].flatten(),
+            attention_mask=encoding["attention_mask"].flatten(),
+            labels=torch.FloatTensor(labels)
+        )
 
-        return {
-            'input_ids': inputs['input_ids'][0],
-            'attention_mask': inputs['attention_mask'][0],
-            'token_type_ids': inputs['token_type_ids'][0],
-            'labels': labels
-        }
-
-
-class ElectraClassificationDataModule(LightningDataModule):
+class HateSpeechDataModule(LightningDataModule):
     def __init__(self, train_data_path, val_data_path, max_length, batch_size,
-                 doc_col, label_col, model_name_or_path, num_workers=1, labels_dict=None):
+                 doc_col, model_name_or_path, num_workers=1):
         super().__init__()
         self.batch_size = batch_size
         self.train_data_path = train_data_path
         self.val_data_path = val_data_path
         self.max_length = max_length
         self.doc_col = doc_col
-        self.label_col = label_col
         self.num_workers = num_workers
         self.model_name_or_path = model_name_or_path
-        self.labels_dict = labels_dict
 
     def setup(self, stage=None):
-        self.train = ElectraClassificationDataset(
-            self.train_data_path, doc_col=self.doc_col, label_col=self.label_col,
-            max_length=self.max_length, labels_dict=self.labels_dict, model_name_or_path=self.model_name_or_path
+        self.train_dataset = HateSpeechDataset(
+            self.train_data_path, model_name_or_path=self.model_name_or_path, max_length=self.max_length, doc_col=self.doc_col
         )
-        self.val = ElectraClassificationDataset(
-            self.train_data_path, doc_col=self.doc_col, label_col=self.label_col,
-            max_length=self.max_length, labels_dict=self.labels_dict, model_name_or_path=self.model_name_or_path
+        self.val_dataset = HateSpeechDataset(
+            self.val_data_path, model_name_or_path=self.model_name_or_path, max_length=self.max_length, doc_col=self.doc_col
         )
 
     def train_dataloader(self):
-        train = DataLoader(self.train, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
-        return train
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
     def val_dataloader(self):
-        val = DataLoader(self.val, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
-        return val
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
     def test_dataloader(self):
-        test = DataLoader(self.val, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
-        return test
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
 def main():
     print("Using PyTorch Ver", torch.__version__)
     print("args: ", args)
     seed_everything(args['random_seed'])
 
-    model = ElectraClassification(**args)
-    dm = ElectraClassificationDataModule(
+    # train_df, test_df, tokenizer, label_columns, num_workers, batch_size=8, max_length=128
+
+    model = HateSpeechClassification(**args)
+    dm = HateSpeechDataModule(
         batch_size=args['batch_size'], train_data_path=args['train_data_path'],
         val_data_path=args['val_data_path'], max_length=args['max_length'], doc_col=args['doc_col'],
-        label_col=args['label_col'], model_name_or_path=args['model_name_or_path'], num_workers=args['num_workers']
+        model_name_or_path=args['model_name_or_path'], num_workers=args['num_workers']
     )
 
     gpus = min(1, torch.cuda.device_count())
