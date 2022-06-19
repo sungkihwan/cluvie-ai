@@ -68,7 +68,7 @@ class ElectraClassification(LightningModule):
         # cls = output[0][:, 0]
 
         output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-        output = self.classifier(output.pooler_output)
+        output = self.classifier(output[0][:, 0])
         output = torch.sigmoid(output)
 
         loss = 0
