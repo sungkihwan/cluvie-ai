@@ -151,57 +151,58 @@ class Model(LightningModule):
             else:
                 return 2
 
-        # df['comment'] = df['comment'].map(lambda x: self.tokenizer.encode(
-        #     clean(str(x)),
-        #     padding='max_length',
-        #     max_length=self.hparams.max_length,
-        #     truncation=True,
-        # ))
-        # df['hate'] = df['hate'].map(string_to_number)
-
-        encoding = df['comment'].map(lambda x: self.tokenizer.encode_plus(
+        df['comment'] = df['comment'].map(lambda x: self.tokenizer.encode(
             clean(str(x)),
-            add_special_tokens=True,
             padding='max_length',
-            return_token_type_ids=True,
-            return_attention_mask=True,
-            max_length=self.hparams.max_seq_length,
+            max_length=self.hparams.max_length,
             truncation=True,
-            return_tensors='pt',
         ))
+        df['hate'] = df['hate'].map(string_to_number)
 
-        input_ids_list = []
-        token_type_ids_list = []
-        attention_mask_list = []
-        label_list = df['hate'].map(string_to_number).to_list()
+        # encoding = df['comment'].map(lambda x: self.tokenizer.encode_plus(
+        #     clean(str(x)),
+        #     add_special_tokens=True,
+        #     padding='max_length',
+        #     return_token_type_ids=True,
+        #     return_attention_mask=True,
+        #     max_length=self.hparams.max_seq_length,
+        #     truncation=True,
+        #     return_tensors='pt',
+        # ))
+        #
+        # input_ids_list = []
+        # token_type_ids_list = []
+        # attention_mask_list = []
+        # label_list = df['hate'].map(string_to_number).to_list()
+        #
+        # for feature in encoding:
+        #     input_ids_list.append(feature['input_ids'])
+        #     token_type_ids_list.append(feature['token_type_ids'])
+        #     attention_mask_list.append(feature['attention_mask'])
 
-        for feature in encoding:
-            input_ids_list.append(feature['input_ids'])
-            token_type_ids_list.append(feature['token_type_ids'])
-            attention_mask_list.append(feature['attention_mask'])
-
-        return dict(
-            input_ids_list=input_ids_list,
-            token_type_ids_list=token_type_ids_list,
-            attention_mask_list=attention_mask_list,
-            label_list=label_list
-        )
+        # return dict(
+        #     input_ids_list=input_ids_list,
+        #     token_type_ids_list=token_type_ids_list,
+        #     attention_mask_list=attention_mask_list,
+        #     label_list=label_list
+        # )
+        return df
 
     def dataloader(self, path, shuffle=False):
         df = self.read_data(path)
         df = self.preprocess_dataframe(df)
 
-        # dataset = TensorDataset(
-        #     torch.tensor(df['comment'].to_list(), dtype=torch.long),
-        #     torch.tensor(df['label'].to_list(), dtype=torch.long),
-        # )
-
         dataset = TensorDataset(
-            torch.tensor(df['input_ids_list'], dtype=torch.long),
-            torch.tensor(df['attention_mask_list'], dtype=torch.long),
-            torch.tensor(df['token_type_ids_list'], dtype=torch.long),
-            torch.tensor(df['label_list'], dtype=torch.long),
+            torch.tensor(df['comment'].to_list(), dtype=torch.long),
+            torch.tensor(df['label'].to_list(), dtype=torch.long),
         )
+
+        # dataset = TensorDataset(
+        #     torch.tensor(df['input_ids_list'], dtype=torch.long),
+        #     torch.tensor(df['attention_mask_list'], dtype=torch.long),
+        #     torch.tensor(df['token_type_ids_list'], dtype=torch.long),
+        #     torch.tensor(df['label_list'], dtype=torch.long),
+        # )
         return DataLoader(
             dataset,
             batch_size=self.hparams.batch_size or self.batch_size,
