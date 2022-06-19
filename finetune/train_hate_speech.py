@@ -59,7 +59,7 @@ class HateSpeechClassification(LightningModule):
         )
 
     def forward(self, input_ids=None, attention_mask=None, labels=None):
-        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        output = self.electra(input_ids=input_ids, attention_mask=attention_mask)
         output = self.classifier(output.last_hidden_state[:, 0]) # if bert self.classifier(output.pooler_output)
         output = torch.sigmoid(output)
         loss = 0
@@ -81,7 +81,7 @@ class HateSpeechClassification(LightningModule):
         attention_mask = batch["attention_mask"]
         labels = batch["labels"]
 
-        loss, output = self(input_ids, attention_mask, labels)
+        loss, output = self(input_ids, attention_mask)
 
         if state == "train":
             step_name = "train_loss"
