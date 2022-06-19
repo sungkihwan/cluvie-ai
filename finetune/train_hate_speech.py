@@ -157,7 +157,7 @@ class Model(LightningModule):
             max_length=self.hparams.max_length,
             truncation=True,
         ))
-        df['hate'] = df['hate'].map(string_to_number)
+        df['label'] = df['hate'].map(string_to_number)
 
         # encoding = df['comment'].map(lambda x: self.tokenizer.encode_plus(
         #     clean(str(x)),
