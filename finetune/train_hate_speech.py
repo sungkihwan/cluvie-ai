@@ -25,9 +25,9 @@ args = {
     'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
     'task_name': '',
     'doc_col': 'comment',
-    'label_col': 'hate',
     'batch_size': 32,
     'labels': 4,
+    'linear_layer_size': 515,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
