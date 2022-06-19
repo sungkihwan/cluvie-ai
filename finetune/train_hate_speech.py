@@ -22,13 +22,10 @@ from soynlp.normalizer import repeat_normalize
 
 device = torch.device("cuda")
 
-# "beomi/KcELECTRA-base"
-# "monologg/koelectra-base-v3-discriminator"
-
 args = {
     'random_seed': 42,  # Random Seed
     'output_dir': 'ckpt',
-    'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
+    'model_name_or_path': "monologg/koelectra-base-v3-discriminator",  # "beomi/KcELECTRA-base"
     'task_name': '',
     'doc_col': 'comment',
     'label_col': 'hate',
@@ -66,24 +63,15 @@ class ElectraClassification(LightningModule):
             nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
         )
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None, token_type_ids=None):
-        # output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        # cls = output[0][:, 0]
+    def forward(self, input_ids=None, attention_mask=None, labels=None):
+        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        output = self.classifier(output.last_hidden_state[:, 0])
+        output = torch.sigmoid(output)
+        loss = 0
+        if labels is not None:
+            loss = self.criterion(output, labels)
 
-        outputs = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-
-        # print(output)
-
-        # output = self.classifier(output[0][:, 0])
-        # output = torch.sigmoid(output)
-        #
-        # loss = 0
-        # if labels is not None:
-        #     loss = self.criterion(output, labels)
-        # return loss, output
-
-        outputs = self.classifier(outputs[0][:, 0])
-        return outputs
+        return loss, output
 
     def step(self, batch, batch_idx, state):
         '''
@@ -100,17 +88,7 @@ class ElectraClassification(LightningModule):
         token_type_ids = batch["token_type_ids"]
         labels = batch["labels"]
 
-        # change label shape (list -> torch.Tensor((batch_size, 1)))
-
-        outputs = self(input_ids, attention_mask, labels, token_type_ids)
-
-        logits = outputs.logits
-
-        loss = outputs.loss
-        # loss = self.loss_func(logits.to(device), batch['label'].to(device))
-
-        softmax = nn.functional.softmax(logits, dim=1)
-        preds = softmax.argmax(dim=1)
+        loss, outputs = self(input_ids, attention_mask, labels)
 
         if state == "train":
             step_name = "train_loss"
@@ -121,7 +99,7 @@ class ElectraClassification(LightningModule):
 
         self.log(step_name, loss, prog_bar=True, logger=True)
 
-        return {"loss": loss, "predictions": preds, "labels": labels}
+        return {"loss": loss, "predictions": outputs, "labels": labels}
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "train")
