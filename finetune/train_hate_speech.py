@@ -32,7 +32,7 @@ args = {
     'linear_layer_size': 515,
     'batch_size': 32,
     'dropout_rate': 0.5,
-    'num_labels': 3,
+    'num_labels': 1,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
@@ -55,6 +55,7 @@ class ElectraClassification(LightningModule):
         self.electra_sequence_classification = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
 
+        # self.electra = ElectraModel.from_pretrained(self.hparams.model_name_or_path, return_dict=False)
         # self.electra_model = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
         # self.criterion = nn.BCELoss()
         # self.classifier = nn.Sequential(
@@ -66,6 +67,8 @@ class ElectraClassification(LightningModule):
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, token_type_ids=None):
         # output = self.electra_model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+
+        # output = self.electra(input_ids=input_ids, attention_mask=attention_mask)
         # output = self.classifier(output.last_hidden_state[:, 0])
         # preds = torch.sigmoid(output)
         # loss = 0
@@ -96,6 +99,12 @@ class ElectraClassification(LightningModule):
         attention_mask = batch["attention_mask"]
         token_type_ids = batch["token_type_ids"]
         labels = batch["labels"]
+
+        # label = batch['label'].view([-1, 1])
+        #
+        # output = self(input_ids=batch['input_ids'].to(device),
+        #               attention_mask=batch['attention_mask'].to(device),
+        #               labels=label.to(device))
 
         loss, preds = self(input_ids, attention_mask, labels, token_type_ids)
 
