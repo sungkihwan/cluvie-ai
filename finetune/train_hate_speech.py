@@ -64,8 +64,8 @@ class ElectraClassification(LightningModule):
             nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
         )
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None):
-        output = self.electra_model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+    def forward(self, input_ids=None, attention_mask=None, labels=None, token_type_ids=None):
+        output = self.electra_model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         output = self.classifier(output.last_hidden_state[:, 0])
         preds = torch.sigmoid(output)
         loss = 0
@@ -97,7 +97,7 @@ class ElectraClassification(LightningModule):
         token_type_ids = batch["token_type_ids"]
         labels = batch["labels"]
 
-        loss, preds = self(input_ids, attention_mask, labels)
+        loss, preds = self(input_ids, attention_mask, labels, token_type_ids)
 
         if state == "train":
             step_name = "train_loss"
