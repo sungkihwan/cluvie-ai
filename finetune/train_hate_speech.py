@@ -26,7 +26,7 @@ args = {
     'batch_size': 32,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
-    'max_seq_length': 128,  # Max Length input size
+    'max_length': 128,  # Max Length input size
     'train_data_path': "data/hate-speech/train.tsv",  # Train Dataset file
     'val_data_path': "data/hate-speech/val.tsv",  # Validation Dataset file
     'test_mode': False,  # Test Mode enables `fast_dev_run`
@@ -165,7 +165,7 @@ class Model(LightningModule):
         #     padding='max_length',
         #     return_token_type_ids=True,
         #     return_attention_mask=True,
-        #     max_length=self.hparams.max_seq_length,
+        #     max_length=self.hparams.max_length,
         #     truncation=True,
         #     return_tensors='pt',
         # ))
