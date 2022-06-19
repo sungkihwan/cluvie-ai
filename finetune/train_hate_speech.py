@@ -51,7 +51,7 @@ class HateSpeechClassification(LightningModule):
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
 
         self.classifier = nn.Sequential(
-            nn.Linear(self.hparams.hidden_layer_size, self.hparams.linear_layer_size),
+            nn.Linear(self.electra.config.hidden_size, self.hparams.linear_layer_size),
             nn.GELU(),
             nn.Dropout(self.hparams.dropout_rate),
             nn.Linear(self.hparams.linear_layer_size, self.hparams.labels),
