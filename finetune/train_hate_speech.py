@@ -1,9 +1,14 @@
 import os
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 import pandas as pd
 
 from pprint import pprint
 
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 
@@ -27,6 +32,10 @@ args = {
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
+    'dropout_rate': 0.5,
+    'hidden_layer_size': 768,
+    'linear_layer_size': 515,
+    'num_labels': 3,
     'train_data_path': "data/hate-speech/train.tsv",  # Train Dataset file
     'val_data_path': "data/hate-speech/val.tsv",  # Validation Dataset file
     'test_mode': False,  # Test Mode enables `fast_dev_run`
@@ -45,9 +54,17 @@ class Model(LightningModule):
 
         self.electra = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
+        self.classifier = nn.Sequential(
+            nn.Linear(self.hparams.hidden_layer_size, self.hparams.linear_layer_size),
+            nn.GELU(),
+            nn.Dropout(self.hparams.dropout_rate),
+            nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
+        )
 
-    def forward(self, **kwargs):
-        return self.electra(**kwargs)
+    def forward(self, input_ids=None, attention_mask=None, token_type_ids=None):
+        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        cls = output[0][:,0]
+        return self.classifier(cls)
 
     def step(self, batch, batch_idx):
         data, labels = batch
