@@ -28,7 +28,7 @@ device = torch.device("cuda")
 args = {
     'random_seed': 42,  # Random Seed
     'output_dir': 'ckpt',
-    'model_name_or_path': "beomi/KcELECTRA-base",
+    'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
     'task_name': '',
     'doc_col': 'comment',
     'label_col': 'hate',
@@ -61,7 +61,7 @@ class ElectraClassification(LightningModule):
 
         self.classifier = nn.Sequential(
             nn.Linear(self.electra.config.hidden_size, self.hparams.linear_layer_size),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Dropout(self.hparams.dropout_rate),
             nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
         )
@@ -70,7 +70,7 @@ class ElectraClassification(LightningModule):
         # output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         # cls = output[0][:, 0]
 
-        outputs = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        outputs = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
 
         # print(output)
 
@@ -103,7 +103,14 @@ class ElectraClassification(LightningModule):
         # change label shape (list -> torch.Tensor((batch_size, 1)))
 
         outputs = self(input_ids, attention_mask, labels, token_type_ids)
+
+        logits = outputs.logits
+
         loss = outputs.loss
+        # loss = self.loss_func(logits.to(device), batch['label'].to(device))
+
+        softmax = nn.functional.softmax(logits, dim=1)
+        preds = softmax.argmax(dim=1)
 
         if state == "train":
             step_name = "train_loss"
@@ -114,7 +121,7 @@ class ElectraClassification(LightningModule):
 
         self.log(step_name, loss, prog_bar=True, logger=True)
 
-        return {"loss": loss, "predictions": outputs, "labels": labels}
+        return {"loss": loss, "predictions": preds, "labels": labels}
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "train")
