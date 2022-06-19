@@ -58,12 +58,12 @@ class ElectraClassification(LightningModule):
         self.electra = ElectraModel.from_pretrained(self.hparams.model_name_or_path, return_dict=False)
         # self.electra_model = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
         # self.criterion = nn.BCELoss()
-        # self.classifier = nn.Sequential(
-        #     nn.Linear(self.electra_model.config.hidden_size, self.hparams.linear_layer_size),
-        #     nn.ReLU(),
-        #     nn.Dropout(self.hparams.dropout_rate),
-        #     nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
-        # )
+        self.classifier = nn.Sequential(
+            nn.Linear(self.electra_model.config.hidden_size, self.hparams.linear_layer_size),
+            nn.ReLU(),
+            nn.Dropout(self.hparams.dropout_rate),
+            nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
+        )
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, token_type_ids=None):
         # output = self.electra_model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
