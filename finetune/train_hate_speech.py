@@ -54,17 +54,19 @@ class Model(LightningModule):
 
         self.electra = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
-        self.classifier = nn.Sequential(
-            nn.Linear(self.hparams.hidden_layer_size, self.hparams.linear_layer_size),
-            nn.GELU(),
-            nn.Dropout(self.hparams.dropout_rate),
-            nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
-        )
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(self.hparams.hidden_layer_size, self.hparams.linear_layer_size),
+        #     nn.GELU(),
+        #     nn.Dropout(self.hparams.dropout_rate),
+        #     nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
+        # )
 
-    def forward(self, input_ids=None, attention_mask=None, token_type_ids=None):
-        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        cls = output[0][:,0]
-        return self.classifier(cls)
+    # def forward(self, input_ids=None, attention_mask=None, token_type_ids=None):
+    #     output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    #     cls = output[0][:,0]
+    #     return self.classifier(cls)
+    def forward(self, **kwargs):
+        return self.electra(**kwargs)
 
     def step(self, batch, batch_idx):
         data, labels = batch
