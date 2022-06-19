@@ -1,19 +1,16 @@
 import os
-
-os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
 import pandas as pd
 
 from pprint import pprint
 
+import torchmetrics
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
-from pytorch_lightning import LightningModule, Trainer, seed_everything, loggers as pl_loggers
+from pytorch_lightning import LightningModule, LightningDataModule, Trainer, seed_everything, loggers as pl_loggers
 
 from transformers import ElectraForSequenceClassification, ElectraTokenizer, AdamW
 
@@ -23,19 +20,20 @@ import re
 import emoji
 from soynlp.normalizer import repeat_normalize
 
+device = torch.device("cuda")
+
 args = {
     'random_seed': 42,  # Random Seed
     'output_dir': 'ckpt',
     'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
     'task_name': '',
+    'doc_col': 'comment',
+    'label_col': 'hate',
+    'linear_layer_size': 515,
     'batch_size': 32,
     'lr': 3e-5,  # Learning Rate
     'max_epochs': 15,  # Max Epochs
     'max_length': 128,  # Max Length input size
-    'dropout_rate': 0.5,
-    'hidden_layer_size': 768,
-    'linear_layer_size': 515,
-    'num_labels': 3,
     'train_data_path': "data/hate-speech/train.tsv",  # Train Dataset file
     'val_data_path': "data/hate-speech/val.tsv",  # Validation Dataset file
     'test_mode': False,  # Test Mode enables `fast_dev_run`
@@ -47,50 +45,74 @@ args = {
     'num_workers': 4,  # Multi thread
 }
 
-class Model(LightningModule):
+class ElectraClassification(LightningModule):
     def __init__(self, **kwargs):
         super().__init__()
         self.save_hyperparameters()  # self.hparams 저장
 
         self.electra = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
-        # self.classifier = nn.Sequential(
-        #     nn.Linear(self.hparams.hidden_layer_size, self.hparams.linear_layer_size),
-        #     nn.GELU(),
-        #     nn.Dropout(self.hparams.dropout_rate),
-        #     nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
-        # )
+        self.criterion = nn.BCELoss()
 
-    # def forward(self, input_ids=None, attention_mask=None, token_type_ids=None):
-    #     output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-    #     cls = output[0][:,0]
-    #     return self.classifier(cls)
-    def forward(self, **kwargs):
-        return self.electra(**kwargs)
+        self.classifier = nn.Sequential(
+            nn.Linear(self.electra.config.hidden_size, self.hparams.linear_layer_size),
+            nn.GELU(),
+            nn.Dropout(self.hparams.dropout_rate),
+            nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
+        )
 
-    def step(self, batch, batch_idx):
-        data, labels = batch
-        output = self(input_ids=data, labels=labels)
+    def forward(self, input_ids=None, attention_mask=None, labels=None, token_type_ids=None):
+        # output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        # cls = output[0][:, 0]
 
-        loss = output.loss
-        logits = output.logits
+        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        output = self.classifier(output.pooler_outpu)
+        output = torch.sigmoid(output)
 
-        preds = logits.argmax(dim=-1)
+        loss = 0
+        if labels is not None:
+            loss = self.criterion(output, labels)
+        return loss, output
 
-        y_true = list(labels.cpu().numpy())
-        y_pred = list(preds.cpu().numpy())
+    def step(self, batch, batch_idx, state):
+        '''
+        ##########################################################
+        electra forward input shape information
+        * input_ids.shape (batch_size, max_length)
+        * attention_mask.shape (batch_size, max_length)
+        * label.shape (batch_size,)
+        ##########################################################
+        '''
 
-        return {
-            'loss': loss,
-            'y_true': y_true,
-            'y_pred': y_pred,
-        }
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        token_type_ids = batch["token_type_ids"]
+        labels = batch["labels"]
+
+        # change label shape (list -> torch.Tensor((batch_size, 1)))
+
+        loss, outputs = self(input_ids, attention_mask, labels)
+
+
+        if state == "train":
+            step_name = "train_loss"
+        elif state == "val":
+            step_name = "val_loss"
+        else:
+            step_name = "test_loss"
+
+        self.log(step_name, loss, prog_bar=True, logger=True)
+
+        return {"loss": loss, "predictions": outputs, "labels": labels}
 
     def training_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx)
+        return self.step(batch, batch_idx, "train")
 
     def validation_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx)
+        return self.step(batch, batch_idx, "val")['loss']
+
+    def test_step(self, batch, batch_idx):
+        return self.step(batch, batch_idx, "test")['loss']
 
     def epoch_end(self, outputs, state='train'):
         loss = torch.tensor(0, dtype=torch.float)
@@ -101,8 +123,8 @@ class Model(LightningModule):
         y_true = []
         y_pred = []
         for i in outputs:
-            y_true += i['y_true']
-            y_pred += i['y_pred']
+            y_true += i['labels']
+            y_pred += i['predictions']
 
         self.log(state + '_loss', float(loss), on_epoch=True, prog_bar=True)
         self.log(state + '_acc', accuracy_score(y_true, y_pred), on_epoch=True, prog_bar=True)
@@ -137,6 +159,30 @@ class Model(LightningModule):
             # }
         }
 
+class ElectraClassificationDataset(Dataset):
+    def __init__(self, path, doc_col, label_col, max_length,
+                 model_name_or_path, num_workers=1, labels_dict=None):
+        self.tokenizer = ElectraTokenizer.from_pretrained(model_name_or_path)
+
+        self.max_length = max_length
+        self.doc_col = doc_col
+        self.label_col = label_col
+
+        # labels
+        # None : label이 num으로 되어 있음
+        # dict : label이 num이 아닌 것으로 되어 있음
+        # ex : {True : 1, False : 0}
+        self.labels_dict = labels_dict
+
+        # dataset
+        df = self.read_data(path)
+        df[label_col] = df[label_col].map(self.string_to_number)
+        # nan 제거
+        df = df.dropna(axis=0)
+        # 중복제거
+        df.drop_duplicates(subset=[self.doc_col], inplace=True)
+        self.dataset = df
+
     def read_data(self, path):
         if path.endswith('xlsx'):
             return pd.read_excel(path)
@@ -147,99 +193,103 @@ class Model(LightningModule):
         else:
             raise NotImplementedError('Only Excel(xlsx)/Csv/Tsv(txt) are Supported')
 
-    def preprocess_dataframe(self, df):
+    def __len__(self):
+        return len(self.dataset)
+
+    # text 데이터 전처리
+    def clean_text(self, text):
         emojis = ''.join(emoji.UNICODE_EMOJI.keys())
         pattern = re.compile(f'[^ .,?!/@$%~％·∼()\x00-\x7Fㄱ-힣{emojis}]+')
         url_pattern = re.compile(
-            r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)')
+            r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)'
+        )
+        processed = pattern.sub(' ', text)
+        processed = url_pattern.sub(' ', processed)
+        processed = processed.strip()
+        processed = repeat_normalize(processed, num_repeats=2)
 
-        # 텍스트 데이터 전처리
-        def clean(x):
-            x = pattern.sub(' ', x)
-            x = url_pattern.sub('', x)
-            x = x.strip()
-            x = repeat_normalize(x, num_repeats=2)
-            return x
+        return processed
 
-        # hate speech label 데이터 전처리
-        def string_to_number(x):
-            if x == 'hate':
-                return 0
-            elif x == 'offensive':
-                return 1
-            else:
-                return 2
+    # hate speech 데이터 전처리
+    def string_to_number(self, label):
+        if label == 'hate':
+            return 0
+        elif label == 'offensive':
+            return 1
+        else:
+            return 2
 
-        df['comment'] = df['comment'].map(lambda x: self.tokenizer.encode(
-            clean(str(x)),
-            padding='max_length',
-            max_length=self.hparams.max_length,
+    def __getitem__(self, idx):
+        document = self.clean_text(self.dataset[self.doc_col].iloc[idx])
+        inputs = self.tokenizer(
+            document,
+            return_tensors='pt',
             truncation=True,
-        ))
-        df['label'] = df['hate'].map(string_to_number)
-
-        # encoding = df['comment'].map(lambda x: self.tokenizer.encode_plus(
-        #     clean(str(x)),
-        #     add_special_tokens=True,
-        #     padding='max_length',
-        #     return_token_type_ids=True,
-        #     return_attention_mask=True,
-        #     max_length=self.hparams.max_length,
-        #     truncation=True,
-        #     return_tensors='pt',
-        # ))
-        #
-        # input_ids_list = []
-        # token_type_ids_list = []
-        # attention_mask_list = []
-        # label_list = df['hate'].map(string_to_number).to_list()
-        #
-        # for feature in encoding:
-        #     input_ids_list.append(feature['input_ids'])
-        #     token_type_ids_list.append(feature['token_type_ids'])
-        #     attention_mask_list.append(feature['attention_mask'])
-
-        # return dict(
-        #     input_ids_list=input_ids_list,
-        #     token_type_ids_list=token_type_ids_list,
-        #     attention_mask_list=attention_mask_list,
-        #     label_list=label_list
-        # )
-        return df
-
-    def dataloader(self, path, shuffle=False):
-        df = self.read_data(path)
-        df = self.preprocess_dataframe(df)
-
-        dataset = TensorDataset(
-            torch.tensor(df['comment'].to_list(), dtype=torch.long),
-            torch.tensor(df['label'].to_list(), dtype=torch.long),
+            max_length=self.max_length,
+            padding='max_length',
+            add_special_tokens=True
         )
 
-        # dataset = TensorDataset(
-        #     torch.tensor(df['input_ids_list'], dtype=torch.long),
-        #     torch.tensor(df['attention_mask_list'], dtype=torch.long),
-        #     torch.tensor(df['token_type_ids_list'], dtype=torch.long),
-        #     torch.tensor(df['label_list'], dtype=torch.long),
-        # )
-        return DataLoader(
-            dataset,
-            batch_size=self.hparams.batch_size or self.batch_size,
-            shuffle=shuffle,
-            num_workers=self.hparams.num_workers,
+        if self.labels_dict:
+            labels = self.labels_dict[self.dataset[self.label_col].iloc[idx]]
+        else:
+            labels = self.dataset[self.label_col].iloc[idx]
+
+        return {
+            'input_ids': inputs['input_ids'][0],
+            'attention_mask': inputs['attention_mask'][0],
+            'token_type_ids': inputs['token_type_ids'][0],
+            'labels': labels
+        }
+
+
+class ElectraClassificationDataModule(LightningDataModule):
+    def __init__(self, train_data_path, val_data_path, max_length, batch_size,
+                 doc_col, label_col, model_name_or_path, num_workers=1, labels_dict=None):
+        super().__init__()
+        self.batch_size = batch_size
+        self.train_data_path = train_data_path
+        self.val_data_path = val_data_path
+        self.max_length = max_length
+        self.doc_col = doc_col
+        self.label_col = label_col
+        self.num_workers = num_workers
+        self.model_name_or_path = model_name_or_path
+        self.labels_dict = labels_dict
+
+    def setup(self, stage=None):
+        self.train = ElectraClassificationDataset(
+            self.train_data_path, doc_col=self.doc_col, label_col=self.label_col,
+            max_length=self.max_length, labels_dict=self.labels_dict, model_name_or_path=self.model_name_or_path
+        )
+        self.val = ElectraClassificationDataset(
+            self.train_data_path, doc_col=self.doc_col, label_col=self.label_col,
+            max_length=self.max_length, labels_dict=self.labels_dict, model_name_or_path=self.model_name_or_path
         )
 
     def train_dataloader(self):
-        return self.dataloader(self.hparams.train_data_path, shuffle=True)
+        train = DataLoader(self.train, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
+        return train
 
     def val_dataloader(self):
-        return self.dataloader(self.hparams.val_data_path, shuffle=False)
+        val = DataLoader(self.val, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
+        return val
+
+    def test_dataloader(self):
+        test = DataLoader(self.val, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
+        return test
 
 def main():
     print("Using PyTorch Ver", torch.__version__)
     print("args: ", args)
     seed_everything(args['random_seed'])
-    model = Model(**args)
+
+    model = ElectraClassification(**args)
+    dm = ElectraClassificationDataModule(
+        batch_size=args['batch_size'], train_data_path=args['train_data_path'],
+        val_data_path=args['val_data_path'], max_length=args['max_length'], doc_col=args['doc_col'],
+        label_col=args['label_col'], model_name_or_path=args['model_name_or_path'], num_workers=args['num_workers']
+    )
 
     gpus = min(1, torch.cuda.device_count())
 
@@ -264,7 +314,6 @@ def main():
     tb_logger = pl_loggers.TensorBoardLogger(os.path.join(args['output_dir'], 'tb_logs'))
     lr_logger_callback = LearningRateMonitor()
 
-    print(":: Start Training ::")
     trainer = Trainer(
         callbacks=[checkpoint_callback, early_stop_callback, lr_logger_callback],
         max_epochs=args['max_epochs'],
@@ -278,6 +327,8 @@ def main():
         # For TPU Setup
         # tpu_cores=args.tpu_cores if args.tpu_cores else None,
     )
-    trainer.fit(model)
+
+    print(":: Start Training ::")
+    trainer.fit(model, dm)
 
 main()
