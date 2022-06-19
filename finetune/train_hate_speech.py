@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer, seed_everything, loggers as pl_loggers
 
-from transformers import ElectraForSequenceClassification, ElectraTokenizer, AdamW
+from transformers import ElectraModel, ElectraForSequenceClassification, ElectraTokenizer, AdamW
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
@@ -52,26 +52,35 @@ class ElectraClassification(LightningModule):
         super().__init__()
         self.save_hyperparameters()  # self.hparams 저장
 
-        self.electra = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
+        # self.electra_sequence_classification = ElectraForSequenceClassification.from_pretrained(self.hparams.model_name_or_path)
         self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
-        self.criterion = nn.BCELoss()
 
+        self.electra_model = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
+        self.criterion = nn.BCELoss()
         self.classifier = nn.Sequential(
-            nn.Linear(self.electra.config.hidden_size, self.hparams.linear_layer_size),
+            nn.Linear(self.electra_model.config.hidden_size, self.hparams.linear_layer_size),
             nn.ReLU(),
             nn.Dropout(self.hparams.dropout_rate),
             nn.Linear(self.hparams.linear_layer_size, self.hparams.num_labels),
         )
 
     def forward(self, input_ids=None, attention_mask=None, labels=None):
-        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        output = self.electra_model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
         output = self.classifier(output.last_hidden_state[:, 0])
-        output = torch.sigmoid(output)
+        preds = torch.sigmoid(output)
         loss = 0
         if labels is not None:
-            loss = self.criterion(output, labels)
+            loss = self.criterion(preds, labels)
 
-        return loss, output
+        # output = self.electra_sequence_classification(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        # logits = output.logits
+        # loss = output.loss
+        # softmax = nn.functional.softmax(logits, dim=1)
+        # preds = softmax.argmax(dim=1)
+        # return loss, preds
+
+        return loss, preds
+
 
     def step(self, batch, batch_idx, state):
         '''
@@ -88,7 +97,7 @@ class ElectraClassification(LightningModule):
         token_type_ids = batch["token_type_ids"]
         labels = batch["labels"]
 
-        loss, outputs = self(input_ids, attention_mask, labels)
+        loss, preds = self(input_ids, attention_mask, labels)
 
         if state == "train":
             step_name = "train_loss"
@@ -99,7 +108,7 @@ class ElectraClassification(LightningModule):
 
         self.log(step_name, loss, prog_bar=True, logger=True)
 
-        return {"loss": loss, "predictions": outputs, "labels": labels}
+        return {"loss": loss, "predictions": preds, "labels": labels}
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "train")
