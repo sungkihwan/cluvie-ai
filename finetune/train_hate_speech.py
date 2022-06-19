@@ -102,6 +102,7 @@ class ElectraClassification(LightningModule):
         token_type_ids = batch["token_type_ids"]
         labels = batch["labels"]
 
+
         loss, preds = self(input_ids, attention_mask, labels, token_type_ids)
 
         if state == "train":
