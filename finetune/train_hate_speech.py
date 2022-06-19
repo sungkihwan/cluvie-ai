@@ -215,11 +215,11 @@ class HateSpeechDataset(Dataset):
     def __getitem__(self, index: int):
         data_row = self.data.iloc[index]
 
-        comment_text = data_row.comment_text
+        comment = data_row[self.doc_col]
         labels = data_row[self.label_columns]
 
         encoding = self.tokenizer.encode_plus(
-            comment_text,
+            comment,
             add_special_tokens=True,
             max_length=self.max_length,
             return_token_type_ids=False,
@@ -230,7 +230,7 @@ class HateSpeechDataset(Dataset):
         )
 
         return dict(
-            comment_text=comment_text,
+            comment=comment,
             input_ids=encoding["input_ids"].flatten(),
             attention_mask=encoding["attention_mask"].flatten(),
             labels=torch.FloatTensor(labels)
