@@ -22,10 +22,13 @@ from soynlp.normalizer import repeat_normalize
 
 device = torch.device("cuda")
 
+# "beomi/KcELECTRA-base"
+# "monologg/koelectra-base-v3-discriminator"
+
 args = {
     'random_seed': 42,  # Random Seed
     'output_dir': 'ckpt',
-    'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
+    'model_name_or_path': "beomi/KcELECTRA-base",
     'task_name': '',
     'doc_col': 'comment',
     'label_col': 'hate',
@@ -67,17 +70,20 @@ class ElectraClassification(LightningModule):
         # output = self.electra(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         # cls = output[0][:, 0]
 
-        output = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        outputs = self.electra(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
 
-        print(output)
+        # print(output)
 
-        output = self.classifier(output[0][:, 0])
-        output = torch.sigmoid(output)
+        # output = self.classifier(output[0][:, 0])
+        # output = torch.sigmoid(output)
+        #
+        # loss = 0
+        # if labels is not None:
+        #     loss = self.criterion(output, labels)
+        # return loss, output
 
-        loss = 0
-        if labels is not None:
-            loss = self.criterion(output, labels)
-        return loss, output
+        outputs = self.classifier(outputs[0][:, 0])
+        return outputs
 
     def step(self, batch, batch_idx, state):
         '''
@@ -96,8 +102,8 @@ class ElectraClassification(LightningModule):
 
         # change label shape (list -> torch.Tensor((batch_size, 1)))
 
-        loss, outputs = self(input_ids, attention_mask, labels)
-
+        outputs = self(input_ids, attention_mask, labels)
+        loss = outputs.loss
 
         if state == "train":
             step_name = "train_loss"
