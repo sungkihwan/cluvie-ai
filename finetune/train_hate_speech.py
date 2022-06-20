@@ -282,21 +282,21 @@ def main():
     gpus = max(1, torch.cuda.device_count())
 
     checkpoint_callback = ModelCheckpoint(
-        monitor='val_roc_auc',
+        monitor='val_loss',
         dirpath=args['output_dir'],
         filename=args['filename'],
         verbose=True,
         save_last=False,
-        mode='max',
+        mode='min',
         save_top_k=3
     )
 
     early_stop_callback = EarlyStopping(
-        monitor='val_roc_auc',
+        monitor='val_loss',
         patience=3,
         strict=False,
         verbose=False,
-        mode='max'
+        mode='min'
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(os.path.join(args['output_dir'], 'tb_logs'))
