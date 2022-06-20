@@ -10,9 +10,11 @@ from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer, seed_everything, loggers as pl_loggers
+from pytorch_lightning.metrics.functional import accuracy, f1, auroc
 
-from transformers import ElectraModel, ElectraTokenizer, AdamW
+from transformers import ElectraModel, ElectraTokenizer, AdamW, get_linear_schedule_with_warmup
 
+from sklearn.metrics import classification_report, multilabel_confusion_matrix
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 import re
@@ -21,24 +23,24 @@ from soynlp.normalizer import repeat_normalize
 
 args = {
     'random_seed': 42,  # Random Seed
-    'output_dir': 'ckpt',
+    'output_dir': 'checkpoints',
     'model_name_or_path': "monologg/koelectra-base-v3-discriminator",
     'task_name': '',
+    'filename': 'model_chp/epoch{epoch}-val_acc{val_acc:.4f}',
     'doc_col': 'comment',
     'batch_size': 32,
-    'labels': 4,
     'linear_layer_size': 515,
     'dropout_rate': 0.5,
     'lr': 3e-5,  # Learning Rate
-    'max_epochs': 15,  # Max Epochs
+    'max_epochs': 20,  # Max Epochs
     'max_length': 128,  # Max Length input size
     'train_data_path': "data/hate-speech/train.tsv",  # Train Dataset file
     'val_data_path': "data/hate-speech/val.tsv",  # Validation Dataset file
     'test_mode': False,  # Test Mode enables `fast_dev_run`
     'optimizer': 'AdamW',
-    'lr_scheduler': 'exp',  # ExponentialLR vs CosineAnnealingWarmRestarts
+    'lr_scheduler': 'exp',  # ExponentialLR(exp), CosineAnnealingWarmRestarts(cos), get_linear_schedule_with_warmup(warmup)
     'lr_parameter': 0.5,
-    'fp16': True,  # Enable train on FP16
+    'fp16': False,  # Enable train on FP16
     'tpu_cores': 0,  # Enable TPU with 1 core or 8 cores
     'num_workers': 4,  # Multi thread
 }
@@ -48,19 +50,20 @@ class HateSpeechClassification(LightningModule):
         super().__init__()
         self.save_hyperparameters()  # self.hparams 저장
 
-        self.electra = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
-        self.tokenizer = ElectraTokenizer.from_pretrained(self.hparams.model_name_or_path)
+        self.model = ElectraModel.from_pretrained(self.hparams.model_name_or_path)
 
         self.classifier = nn.Sequential(
-            nn.Linear(self.electra.config.hidden_size, self.hparams.linear_layer_size),
+            nn.Linear(self.model.config.hidden_size, self.hparams.linear_layer_size),
             nn.GELU(),
             nn.Dropout(self.hparams.dropout_rate),
-            nn.Linear(self.hparams.linear_layer_size, self.hparams.labels),
+            nn.Linear(self.hparams.linear_layer_size, self.hparams.label_size),
         )
 
+        self.criterion = nn.BCELoss()
+
     def forward(self, input_ids=None, attention_mask=None, labels=None):
-        output = self.electra(input_ids=input_ids, attention_mask=attention_mask)
-        output = self.classifier(output.last_hidden_state[:, 0]) # if bert self.classifier(output.pooler_output)
+        output = self.model(input_ids=input_ids, attention_mask=attention_mask)
+        output = self.classifier(output.last_hidden_state[:, 0]) # bertmodel -> self.classifier(output.pooler_output)
         output = torch.sigmoid(output)
         loss = 0
         if labels is not None:
@@ -81,52 +84,60 @@ class HateSpeechClassification(LightningModule):
         attention_mask = batch["attention_mask"]
         labels = batch["labels"]
 
-        loss, output = self(input_ids, attention_mask)
+        loss, output = self(input_ids, attention_mask, labels)
 
         if state == "train":
-            step_name = "train_loss"
+            self.log("train_loss", loss, prog_bar=True, logger=True)
+            return {"loss": loss, "predictions": output, "labels": labels}
         elif state == "val":
-            step_name = "val_loss"
+            self.log("val_loss", loss, prog_bar=True, logger=True)
+            return loss
         else:
-            step_name = "test_loss"
-
-        self.log(step_name, loss, prog_bar=True, logger=True)
-
-        return {"loss": loss, "predictions": output, "labels": labels}
+            self.log("test_loss", loss, prog_bar=True, logger=True)
+            return loss
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "train")
 
     def validation_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx, "val")['loss']
+        return self.step(batch, batch_idx, "val")
 
     def test_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx, "test")['loss']
+        return self.step(batch, batch_idx, "test")
 
-    def epoch_end(self, outputs, state='train'):
-        loss = torch.tensor(0, dtype=torch.float)
-        for i in outputs:
-            loss += i['loss'].cpu().detach()
-        loss = loss / len(outputs)
+    def training_epoch_end(self, outputs):
+        labels = []
+        predictions = []
+        for output in outputs:
+            for out_labels in output["labels"].detach().cpu():
+                labels.append(out_labels)
+            for out_predictions in output["predictions"].detach().cpu():
+                predictions.append(out_predictions)
 
-        y_true = []
-        y_pred = []
-        for i in outputs:
-            y_true += i['y_true']
-            y_pred += i['y_pred']
+        labels = torch.stack(labels).int()
+        predictions = torch.stack(predictions)
 
-        self.log(state + '_loss', float(loss), on_epoch=True, prog_bar=True)
-        self.log(state + '_acc', accuracy_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        self.log(state + '_precision', precision_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        self.log(state + '_recall', recall_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        self.log(state + '_f1', f1_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        return {'loss': loss}
+        for i, name in enumerate(self.hparams.label_columns):
+            class_roc_auc = auroc(predictions[:, i], labels[:, i])
+            self.logger.experiment.add_scalar(f"{name}_roc_auc/Train", class_roc_auc, self.current_epoch)
 
-    def train_epoch_end(self, outputs):
-        return self.epoch_end(outputs, state='train')
-
-    def validation_epoch_end(self, outputs):
-        return self.epoch_end(outputs, state='val')
+        # loss = torch.tensor(0, dtype=torch.float)
+        # for i in outputs:
+        #     loss += i['loss'].cpu().detach()
+        # loss = loss / len(outputs)
+        #
+        # y_true = []
+        # y_pred = []
+        # for i in outputs:
+        #     y_true += i['y_true']
+        #     y_pred += i['y_pred']
+        #
+        # self.log('loss', float(loss), on_epoch=True, prog_bar=True)
+        # self.log('acc', accuracy_score(y_true, y_pred), on_epoch=True, prog_bar=True)
+        # self.log('precision', precision_score(y_true, y_pred), on_epoch=True, prog_bar=True)
+        # self.log('recall', recall_score(y_true, y_pred), on_epoch=True, prog_bar=True)
+        # self.log('f1', f1_score(y_true, y_pred), on_epoch=True, prog_bar=True)
+        # return {'loss': loss}
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.hparams.lr)
@@ -135,54 +146,37 @@ class HateSpeechClassification(LightningModule):
             scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=1, T_mult=2)
         elif self.hparams.lr_scheduler == 'exp':
             scheduler = ExponentialLR(optimizer, gamma=self.hparams.lr_parameter)
+        elif self.hparams.lr_scheduler == "warmup":
+            scheduler = get_linear_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=self.hparams.n_warmup_steps,
+                num_training_steps=self.hparams.n_training_steps
+            )
         else:
-            raise NotImplementedError('Only cos and exp lr scheduler is Supported!')
+            raise NotImplementedError('Only cos, exp, warmup lr scheduler is Supported!')
 
-        return {
-            'optimizer': optimizer,
-            'scheduler': scheduler,
-            # 'lr_scheduler': {
-            #     'scheduler': scheduler,
-            #     'monitor': 'val_acc',
-            #     'interval': 'step',
-            # }
-        }
+        return dict(
+            optimizer=optimizer,
+            lr_scheduler=dict(
+                scheduler=scheduler,
+                interval='step'
+            )
+        )
 
 class HateSpeechDataset(Dataset):
     def __init__(
             self,
-            data_path,
+            data: pd.DataFrame,
             model_name_or_path,
+            label_columns,
             max_length: int = 128,
-            doc_col = "comment"
+            doc_col="comment"
     ):
+        self.data = data
         self.tokenizer = ElectraTokenizer.from_pretrained(model_name_or_path)
+        self.label_columns = label_columns
         self.max_length = max_length
         self.doc_col = doc_col
-
-        # 파일 읽기
-        df = self.read_data(data_path)
-
-        # hate speech date 전처리
-        df = self.hate_speech_preprocessor(df)
-
-        self.label_columns = df.columns.tolist()[2:]
-        self.data = df
-
-    def hate_speech_preprocessor(self, df):
-
-        df['offensive'] = df['hate'].map(lambda x: 1 if x == "offensive" else 0)
-        df['hate'] = df['hate'].map(lambda x: 1 if x == "hate" else 0)
-        df['others'] = df['bias'].map(lambda x: 1 if x == "others" else 0)
-        df['gender'] = df['bias'].map(lambda x: 1 if x == "gender" else 0)
-        df.drop(['bias'], axis=1, inplace=True)
-
-        # nan 제거
-        df = df.dropna(axis=0)
-        # 중복제거
-        df.drop_duplicates(subset=[self.doc_col], inplace=True)
-
-        return df
 
     # 한국어 데이터 전처리
     def clean_text(self, text):
@@ -198,25 +192,14 @@ class HateSpeechDataset(Dataset):
 
         return processed
 
-    # 파일 읽기
-    def read_data(self, path):
-        if path.endswith('xlsx'):
-            return pd.read_excel(path)
-        elif path.endswith('csv'):
-            return pd.read_csv(path)
-        elif path.endswith('tsv') or path.endswith('txt'):
-            return pd.read_csv(path, sep='\t')
-        else:
-            raise NotImplementedError('Only Excel(xlsx)/Csv/Tsv(txt) are Supported')
-
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, index: int):
-        data_row = self.data.iloc[index]
+        data_row = self.data.iloc[index]    # 행 데이터 가져오기
 
-        comment = data_row[self.doc_col]
-        labels = data_row[self.label_columns]
+        comment = self.clean_text(data_row[self.doc_col])   # 한국어 데이터 전처리후 글자 데이터 가져오기
+        labels = data_row[self.label_columns]   # 레이블 데이터 가져오기
 
         encoding = self.tokenizer.encode_plus(
             comment,
@@ -237,23 +220,27 @@ class HateSpeechDataset(Dataset):
         )
 
 class HateSpeechDataModule(LightningDataModule):
-    def __init__(self, train_data_path, val_data_path, max_length, batch_size,
-                 doc_col, model_name_or_path, num_workers=1):
+    def __init__(self, batch_size, train_data, val_data, max_length,
+                 doc_col, model_name_or_path, label_columns, num_workers=1):
         super().__init__()
         self.batch_size = batch_size
-        self.train_data_path = train_data_path
-        self.val_data_path = val_data_path
+        self.train_data = train_data
+        self.val_data = val_data
         self.max_length = max_length
         self.doc_col = doc_col
-        self.num_workers = num_workers
         self.model_name_or_path = model_name_or_path
+        self.label_columns = label_columns
+        self.num_workers = num_workers
+
 
     def setup(self, stage=None):
         self.train_dataset = HateSpeechDataset(
-            self.train_data_path, model_name_or_path=self.model_name_or_path, max_length=self.max_length, doc_col=self.doc_col
+            self.train_data, model_name_or_path=self.model_name_or_path, label_columns=self.label_columns,
+            max_length=self.max_length, doc_col=self.doc_col
         )
         self.val_dataset = HateSpeechDataset(
-            self.val_data_path, model_name_or_path=self.model_name_or_path, max_length=self.max_length, doc_col=self.doc_col
+            self.val_data, model_name_or_path=self.model_name_or_path, label_columns=self.label_columns,
+            max_length=self.max_length, doc_col=self.doc_col
         )
 
     def train_dataloader(self):
@@ -265,26 +252,60 @@ class HateSpeechDataModule(LightningDataModule):
     def test_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
+
+# 파일 읽기
+def read_data(path):
+    if path.endswith('xlsx'):
+        return pd.read_excel(path)
+    elif path.endswith('csv'):
+        return pd.read_csv(path)
+    elif path.endswith('tsv') or path.endswith('txt'):
+        return pd.read_csv(path, sep='\t')
+    else:
+        raise NotImplementedError('Only Excel(xlsx)/Csv/Tsv(txt) are Supported')
+
+def hate_speech_preprocessor(df, doc_col):
+    # nan 제거
+    df = df.dropna(axis=0)
+    # 중복제거
+    df.drop_duplicates(subset=[doc_col], inplace=True)
+
+    df['offensive'] = df['hate'].map(lambda x: 1 if x == "offensive" else 0)
+    df['hate'] = df['hate'].map(lambda x: 1 if x == "hate" else 0)
+    df['others'] = df['bias'].map(lambda x: 1 if x == "others" else 0)
+    df['gender'] = df['bias'].map(lambda x: 1 if x == "gender" else 0)
+    df.drop(['bias'], axis=1, inplace=True)
+
+    return df
+
 def main():
     print("Using PyTorch Ver", torch.__version__)
-    print("args: ", args)
     seed_everything(args['random_seed'])
 
-    # train_df, test_df, tokenizer, label_columns, num_workers, batch_size=8, max_length=128
+    train_data = hate_speech_preprocessor(read_data(args['train_data_path']), args['doc_col'])
+    val_data = hate_speech_preprocessor(read_data(args['val_data_path']), args['doc_col'])
+
+    args['label_columns'] = val_data.columns.tolist()[2:]
+    args['label_size'] = len(args['label_columns'])
+
+    args['n_training_steps'] = len(train_data) // args['batch_size'] * args['max_epochs']
+    args['n_warmup_steps'] = args['n_training_steps'] // 5
+
+    print("args: ", args)
 
     model = HateSpeechClassification(**args)
     dm = HateSpeechDataModule(
-        batch_size=args['batch_size'], train_data_path=args['train_data_path'],
-        val_data_path=args['val_data_path'], max_length=args['max_length'], doc_col=args['doc_col'],
-        model_name_or_path=args['model_name_or_path'], num_workers=args['num_workers']
+        batch_size=args['batch_size'], train_data=train_data, val_data=val_data,
+        max_length=args['max_length'], model_name_or_path=args['model_name_or_path'],
+        num_workers=args['num_workers'], label_columns=args['label_columns'],
     )
 
-    gpus = min(1, torch.cuda.device_count())
+    gpus = max(1, torch.cuda.device_count())
 
     checkpoint_callback = ModelCheckpoint(
         monitor='val_acc',
         dirpath=args['output_dir'],
-        filename='model_chp/epoch{epoch}-val_acc{val_acc:.4f}',
+        filename=args['filename'],
         verbose=True,
         save_last=False,
         mode='max',
