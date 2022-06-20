@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer, seed_everything, loggers as pl_loggers
-from pytorch_lightning.metrics.functional import accuracy, f1, auroc
+from torchmetrics.functional import accuracy, f1_score, auroc
 
 from transformers import ElectraModel, ElectraTokenizer, AdamW, get_linear_schedule_with_warmup
 
