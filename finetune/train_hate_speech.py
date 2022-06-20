@@ -295,8 +295,8 @@ def main():
 
     model = HateSpeechClassification(**args)
     dm = HateSpeechDataModule(
-        batch_size=args['batch_size'], train_data=train_data, val_data=val_data,
-        max_length=args['max_length'], model_name_or_path=args['model_name_or_path'],
+        batch_size=args['batch_size'], train_data=train_data, val_data=val_data, max_length=args['max_length'],
+        doc_col=args['doc_col'], model_name_or_path=args['model_name_or_path'],
         num_workers=args['num_workers'], label_columns=args['label_columns'],
     )
 
