@@ -9,7 +9,7 @@ dataset = load_dataset('smilegate-ai/kor_unsmile')
 
 unsmile_labels = ["여성/가족","남성","성소수자","인종/국적","연령","지역","종교","기타 혐오","악플/욕설","clean"]
 
-model_name = 'monologg/koelectra-base-v3-discriminator'
+model_name = 'beomi/KcELECTRA-base'
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
