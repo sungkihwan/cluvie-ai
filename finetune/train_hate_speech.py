@@ -10,12 +10,11 @@ from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingWarmRestarts
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer, seed_everything, loggers as pl_loggers
-from torchmetrics.functional import accuracy, f1_score, auroc
+from torchmetrics.functional import accuracy, f1_score, auroc, recall, precision
 
 from transformers import ElectraModel, ElectraTokenizer, AdamW, get_linear_schedule_with_warmup
 
 from sklearn.metrics import classification_report, multilabel_confusion_matrix
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 import re
 import emoji
@@ -86,15 +85,8 @@ class HateSpeechClassification(LightningModule):
 
         loss, output = self(input_ids, attention_mask, labels)
 
-        if state == "train":
-            self.log("train_loss", loss, prog_bar=True, logger=True)
-            return {"loss": loss, "predictions": output, "labels": labels}
-        elif state == "val":
-            self.log("val_loss", loss, prog_bar=True, logger=True)
-            return loss
-        else:
-            self.log("test_loss", loss, prog_bar=True, logger=True)
-            return loss
+        self.log(state + "_loss", loss, prog_bar=True, logger=True)
+        return {"loss": loss, "predictions": output, "labels": labels}
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "train")
@@ -105,7 +97,7 @@ class HateSpeechClassification(LightningModule):
     def test_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "test")
 
-    def training_epoch_end(self, outputs):
+    def epoch_end(self, outputs, state='train'):
         labels = []
         predictions = []
         for output in outputs:
@@ -119,25 +111,13 @@ class HateSpeechClassification(LightningModule):
 
         for i, name in enumerate(self.hparams.label_columns):
             class_roc_auc = auroc(predictions[:, i], labels[:, i])
-            self.logger.experiment.add_scalar(f"{name}_roc_auc/Train", class_roc_auc, self.current_epoch)
+            self.log(f"{state}_roc_auc", class_roc_auc, on_epoch=True, prog_bar=True)
 
-        # loss = torch.tensor(0, dtype=torch.float)
-        # for i in outputs:
-        #     loss += i['loss'].cpu().detach()
-        # loss = loss / len(outputs)
-        #
-        # y_true = []
-        # y_pred = []
-        # for i in outputs:
-        #     y_true += i['y_true']
-        #     y_pred += i['y_pred']
-        #
-        # self.log('loss', float(loss), on_epoch=True, prog_bar=True)
-        # self.log('acc', accuracy_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        # self.log('precision', precision_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        # self.log('recall', recall_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        # self.log('f1', f1_score(y_true, y_pred), on_epoch=True, prog_bar=True)
-        # return {'loss': loss}
+    def train_epoch_end(self, outputs):
+        return self.epoch_end(outputs, state='train')
+
+    def validation_epoch_end(self, outputs):
+        return self.epoch_end(outputs, state='val')
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.hparams.lr)
@@ -232,7 +212,6 @@ class HateSpeechDataModule(LightningDataModule):
         self.label_columns = label_columns
         self.num_workers = num_workers
 
-
     def setup(self, stage=None):
         self.train_dataset = HateSpeechDataset(
             self.train_data, model_name_or_path=self.model_name_or_path, label_columns=self.label_columns,
@@ -303,7 +282,7 @@ def main():
     gpus = max(1, torch.cuda.device_count())
 
     checkpoint_callback = ModelCheckpoint(
-        monitor='val_acc',
+        monitor='val_roc_auc',
         dirpath=args['output_dir'],
         filename=args['filename'],
         verbose=True,
@@ -313,7 +292,7 @@ def main():
     )
 
     early_stop_callback = EarlyStopping(
-        monitor='val_acc',
+        monitor='val_roc_auc',
         patience=3,
         strict=False,
         verbose=False,
